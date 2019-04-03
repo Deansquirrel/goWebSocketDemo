@@ -1,4 +1,4 @@
-package object
+package his
 
 import (
 	"fmt"
@@ -7,50 +7,52 @@ import (
 )
 
 type clientManager struct {
-	clients    map[string]*Client
-	broadcast  chan *Message
-	register   chan *Client
-	unregister chan *Client
+	clients      map[string]IClient
+	chBroadcast  chan *Message
+	chRegister   chan IClient
+	chUnregister chan IClient
 
 	lock sync.Mutex
 }
 
 func NewClientManager() *clientManager {
 	return &clientManager{
-		clients:    make(map[string]*Client, 0),
-		broadcast:  make(chan *Message),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		clients:      make(map[string]IClient),
+		chBroadcast:  make(chan *Message),
+		chRegister:   make(chan IClient),
+		chUnregister: make(chan IClient),
 	}
 }
 
 func (manager *clientManager) Start() {
 	log.Info("clientManager Start")
-	defer func() {
-		log.Info("clientManager Exit")
-	}()
-	for {
-		select {
-		case conn := <-manager.register:
-			manager.addClient(conn)
-		case conn := <-manager.unregister:
-			manager.delClient(conn)
-		case msg := <-manager.broadcast:
-			manager.broad(msg)
+	defer log.Info("clientManager Exit")
+	go func() {
+		for {
+			select {
+			case c := <-manager.chRegister:
+				log.Debug("R " + c.GetId())
+				manager.register(c)
+			case c := <-manager.chUnregister:
+				manager.unregister(c)
+			case m := <-manager.chBroadcast:
+				manager.Broadcast(m)
+			}
 		}
-	}
+	}()
 }
 
-func (manager *clientManager) Register(c *Client) {
-	manager.register <- c
+func (manager *clientManager) Register(c IClient) {
+	log.Debug("RR " + c.GetId())
+	manager.chRegister <- c
 }
 
-func (manager *clientManager) Unregister(c *Client) {
-	manager.unregister <- c
+func (manager *clientManager) Unregister(c IClient) {
+	manager.chUnregister <- c
 }
 
 func (manager *clientManager) Broadcast(msg *Message) {
-	manager.broadcast <- msg
+	manager.chBroadcast <- msg
 }
 
 func (manager *clientManager) Send(id string, msg *Message) {
@@ -59,39 +61,37 @@ func (manager *clientManager) Send(id string, msg *Message) {
 		log.Error(fmt.Sprintf("Client[%s]is not exists", id))
 		return
 	}
-	c.ChSend <- msg
+	c.Send(msg)
 }
 
 func (manager *clientManager) Close() {
-	close(manager.broadcast)
-	close(manager.register)
-	close(manager.unregister)
+	close(manager.chBroadcast)
+	close(manager.chRegister)
+	close(manager.chUnregister)
 }
 
-func (manager *clientManager) addClient(c *Client) {
+func (manager *clientManager) register(c IClient) {
 	manager.lock.Lock()
 	defer manager.lock.Unlock()
-	manager.clients[c.id] = c
+	log.Info(fmt.Sprintf("Client Register: %s，CurrClientNum: %d", c.GetId(), len(manager.clients)))
+	manager.clients[c.GetId()] = c
 }
 
-func (manager *clientManager) delClient(c *Client) {
+func (manager *clientManager) unregister(c IClient) {
 	manager.lock.Lock()
 	defer manager.lock.Unlock()
-	_, ok := manager.clients[c.id]
+	log.Info(fmt.Sprintf("Client Unregister: %s", c.GetId()))
+	_, ok := manager.clients[c.GetId()]
 	if ok {
 		c.Close()
-		delete(manager.clients, c.id)
+		delete(manager.clients, c.GetId())
 	}
 }
 
 func (manager *clientManager) broad(msg *Message) {
 	go func() {
-		for _, conn := range manager.clients {
-			select {
-			case conn.ChSend <- msg:
-			default:
-				manager.delClient(conn)
-			}
+		for _, c := range manager.clients {
+			c.Send(msg)
 		}
 	}()
 }

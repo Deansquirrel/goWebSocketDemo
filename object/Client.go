@@ -1,8 +1,10 @@
 package object
 
 import (
+	"context"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"sync"
 )
 
 import log "github.com/Deansquirrel/goToolLog"
@@ -10,40 +12,33 @@ import log "github.com/Deansquirrel/goToolLog"
 type client struct {
 	id        string
 	socket    *websocket.Conn
-	chReceive chan *Message
-	chSend    chan *Message
-	chErr     chan *error
+	ChReceive chan *Message
+	ChSend    chan *Message
+	lock      sync.Mutex
+
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func NewClient(id string, socket *websocket.Conn) *client {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &client{
+		id:        id,
+		socket:    socket,
+		ChReceive: make(chan *Message),
+		ChSend:    make(chan *Message),
+		ctx:       ctx,
+		cancel:    cancel,
+	}
 }
 
 func (c *client) GetId() string {
 	return c.id
 }
 
-func (c *client) Start(receiveFunc func(*Message), errFunc func(*error)) {
-	go c.handler(receiveFunc, errFunc)
-}
-
-func (c *client) Send(msg *Message) {
-	c.chSend <- msg
-}
-
-func (c *client) Close() {
-	c.chSend <- c.getCloseMsg()
-	_ = c.socket.Close()
-	close(c.chReceive)
-	close(c.chSend)
-	close(c.chErr)
-}
-
-func (c *client) handler(receiveFunc func(*Message), errFunc func(*error)) {
-	for {
-		select {
-		case msg := <-c.chReceive:
-			receiveFunc(msg)
-		case err := <-c.chErr:
-			errFunc(err)
-		}
-	}
+func (c *client) Start() {
+	go c.read()
+	go c.write()
 }
 
 func (c *client) read() {
@@ -57,32 +52,37 @@ func (c *client) read() {
 			if websocket.IsCloseError(err) {
 				c.Close()
 			} else {
-				c.chErr <- &err
+				log.Error(fmt.Sprintf("Read error:%s,ClientID:%s", err.Error(), c.GetId()))
 			}
 			return
 		}
-		c.chReceive <- &Message{MessageType: t, Data: d}
+		c.ChReceive <- &Message{t, d}
 	}
 }
 
-func (c *client) write(msg *Message) {
+func (c *client) write() {
 	log.Debug(fmt.Sprintf("write start,id:%s", c.id))
 	defer func() {
 		log.Debug(fmt.Sprintf("write exit,id:%s", c.id))
 	}()
-	select {
-	case msg, ok := <-c.chSend:
-		if !ok {
-			_ = c.socket.WriteMessage(websocket.CloseMessage, []byte{})
+	for {
+		select {
+		case m := <-c.ChSend:
+			c.writeWorker(m)
+		case <-c.ctx.Done():
 			return
 		}
-		_ = c.socket.WriteMessage(msg.MessageType, msg.Data)
 	}
 }
 
-func (c *client) getCloseMsg() *Message {
-	return &Message{
-		MessageType: websocket.CloseMessage,
-		Data:        []byte{},
-	}
+func (c *client) writeWorker(msg *Message) {
+	log.Debug(fmt.Sprintf("write msg start,id:%s,msg:%s", c.id, msg.Data))
+	defer func() {
+		log.Debug(fmt.Sprintf("write msg exit,id:%s", c.id))
+	}()
+	_ = c.socket.WriteMessage(msg.MessageType, msg.Data)
+}
+
+func (c *client) Close() {
+	_ = c.socket.Close()
 }

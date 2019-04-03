@@ -1,4 +1,4 @@
-package service
+package wsService
 
 type IService interface {
 	Start()

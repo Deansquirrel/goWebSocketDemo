@@ -6,7 +6,7 @@ import (
 	log "github.com/Deansquirrel/goToolLog"
 	"github.com/Deansquirrel/goWebSocketDemo/common"
 	"github.com/Deansquirrel/goWebSocketDemo/global"
-	myService "github.com/Deansquirrel/goWebSocketDemo/service"
+	myService "github.com/Deansquirrel/goWebSocketDemo/wsService"
 	"github.com/kardianos/service"
 	"os"
 )
