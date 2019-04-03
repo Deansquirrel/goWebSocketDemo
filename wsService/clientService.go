@@ -3,27 +3,23 @@ package wsService
 import (
 	"fmt"
 	"github.com/Deansquirrel/goToolCommon"
-	log "github.com/Deansquirrel/goToolLog"
-	"github.com/Deansquirrel/goWebSocketDemo/object"
+	"github.com/Deansquirrel/goWebSocketDemo/worker"
 	"github.com/gorilla/websocket"
-	"github.com/kataras/iris/core/errors"
 	"net/url"
-	"os"
 	"time"
 )
 
+import log "github.com/Deansquirrel/goToolLog"
+
 type clientService struct {
-	client object.IClient
+	client *worker.Client
+}
+
+func NewClientService() *clientService {
+	return &clientService{}
 }
 
 func (s *clientService) Start() {
-	err := s.restart()
-	if err != nil {
-		log.Error(err.Error())
-	}
-}
-
-func (s *clientService) restart() error {
 	if s.client != nil {
 		s.client.Close()
 	}
@@ -34,19 +30,18 @@ func (s *clientService) restart() error {
 	}
 	conn, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
-		return errors.New(fmt.Sprintf("WebSocket Dial error: %s", err.Error()))
+		log.Error(fmt.Sprintf("WebSocket Dial error: %s", err.Error()))
+		return
 	}
-	c := object.NewClient(goToolCommon.Guid(), conn)
-	c.Start(s.msgHandler, s.errHandler)
-	s.client = c
-	return nil
+	s.client = worker.NewClient(goToolCommon.Guid(), conn)
+	go s.msgHandler()
 }
 
-func (s *clientService) msgHandler(msg *object.Message) {
-	log.Info(fmt.Sprintf("Received msg: %s", msg.Data))
-}
-
-func (s *clientService) errHandler(err error) {
-	log.Error(fmt.Sprintf("Received err: %s", err.Error()))
-	os.Exit(-1)
+func (s *clientService) msgHandler() {
+	for {
+		select {
+		case msg := <-s.client.ChReceive:
+			log.Debug(fmt.Sprintf("ID:%s,Type:%d,Msg:%s", msg.ClientId, msg.MessageType, msg.Data))
+		}
+	}
 }

@@ -1,10 +1,9 @@
 package wsService
 
 import (
-	"fmt"
 	"github.com/Deansquirrel/goToolCommon"
 	"github.com/Deansquirrel/goWebSocketDemo/object"
-	"github.com/Deansquirrel/goWebSocketDemo/service"
+	"github.com/Deansquirrel/goWebSocketDemo/worker"
 	"github.com/gorilla/websocket"
 	"net/http"
 )
@@ -12,10 +11,19 @@ import (
 import log "github.com/Deansquirrel/goToolLog"
 
 type serverService struct {
+	manager worker.IClientManager
+}
+
+func NewServerService() *serverService {
+	return &serverService{}
 }
 
 func (s *serverService) Start() {
 	log.Info("Starting application")
+
+	s.manager = worker.NewClientManager()
+	s.manager.Start()
+
 	http.HandleFunc("/websocket", s.wsPage)
 	_ = http.ListenAndServe(":1234", nil)
 }
@@ -27,23 +35,24 @@ func (s *serverService) wsPage(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	c := object.NewClient(goToolCommon.Guid(), conn)
-	c.Start(s.msgHandler, s.errHandler)
+	c := worker.NewClient(goToolCommon.Guid(), conn)
+	//c.Start()
+	//s.manager.ChRegister <- c
+	s.manager.GetChRegister() <- c
 
-	msg := fmt.Sprintf("hello, %s", c.GetId())
-	hMessage := &object.Message{
+	m := object.SocketMessage{
 		MessageType: websocket.TextMessage,
-		Data:        []byte(msg),
+		Data:        []byte("OK"),
 	}
-	service.ChRegister <- c
-	service.ChBroadcast <- hMessage
+	s.manager.GetChBroadcast() <- &m
 }
 
-func (s *serverService) msgHandler(msg *object.Message) {
-	log.Info(fmt.Sprintf("Received msg: %s", msg.Data))
-}
-
-func (s *serverService) errHandler(err error) {
-	log.Error(fmt.Sprintf("Received err: %s", err.Error()))
-
-}
+//
+//func (s *serverService) msgHandler(client *worker.Client) {
+//	for{
+//		select{
+//		case msg := <- client.GetReceiveChan():
+//			log.Debug(fmt.Sprintf("ID:%s,Type:%d,Msg:%s",msg.ClientId,msg.MessageType,msg.Data))
+//		}
+//	}
+//}

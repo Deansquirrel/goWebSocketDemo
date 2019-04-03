@@ -6,7 +6,7 @@ import (
 	log "github.com/Deansquirrel/goToolLog"
 	"github.com/Deansquirrel/goWebSocketDemo/common"
 	"github.com/Deansquirrel/goWebSocketDemo/global"
-	myService "github.com/Deansquirrel/goWebSocketDemo/service"
+	"github.com/Deansquirrel/goWebSocketDemo/wsService"
 	"github.com/kardianos/service"
 	"os"
 )
@@ -20,7 +20,7 @@ func (p *programClient) Start(s service.Service) error {
 
 func (p *programClient) run() {
 	//服务所执行的代码
-	s := myService.NewClientService()
+	s := wsService.NewClientService()
 	if s != nil {
 		s.Start()
 	}

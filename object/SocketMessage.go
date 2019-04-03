@@ -1,6 +1,7 @@
 package object
 
-type Message struct {
+type SocketMessage struct {
+	ClientId    string
 	MessageType int
 	Data        []byte
 }
