@@ -9,35 +9,45 @@ import (
 import log "github.com/Deansquirrel/goToolLog"
 
 type clientManager struct {
-	clients      map[string]*Client
-	chRegister   chan *Client
+	clients      map[string]IClient
+	chRegister   chan IClient
 	chUnregister chan string
 	chBroadcast  chan *object.SocketMessage
 	lock         sync.Mutex
 }
 
 func NewClientManager() *clientManager {
-	return &clientManager{
-		clients:      make(map[string]*Client),
-		chRegister:   make(chan *Client),
+	cm := clientManager{
+		clients:      make(map[string]IClient),
+		chRegister:   make(chan IClient),
 		chUnregister: make(chan string),
 		chBroadcast:  make(chan *object.SocketMessage),
 	}
+	cm.start()
+	return &cm
 }
 
-func (manager *clientManager) GetChRegister() chan *Client {
+func (manager *clientManager) GetClient(id string) IClient {
+	client, ok := manager.clients[id]
+	if ok {
+		return client
+	}
+	return nil
+}
+
+func (manager *clientManager) GetChRegister() chan<- IClient {
 	return manager.chRegister
 }
 
-func (manager *clientManager) GetChUnregister() chan string {
+func (manager *clientManager) GetChUnregister() chan<- string {
 	return manager.chUnregister
 }
 
-func (manager *clientManager) GetChBroadcast() chan *object.SocketMessage {
+func (manager *clientManager) GetChBroadcast() chan<- *object.SocketMessage {
 	return manager.chBroadcast
 }
 
-func (manager *clientManager) Start() {
+func (manager *clientManager) start() {
 	go func() {
 		for {
 			select {
@@ -52,22 +62,26 @@ func (manager *clientManager) Start() {
 	}()
 }
 
-func (manager *clientManager) register(c *Client) {
+func (manager *clientManager) register(c IClient) {
 	manager.lock.Lock()
 	defer manager.lock.Unlock()
-	log.Info(fmt.Sprintf("Client Register: %s，CurrClientNum: %d", c.GetId(), len(manager.clients)))
+	_, ok := manager.clients[c.GetId()]
+	if ok {
+		log.Error(fmt.Sprintf("ClientId %s is already exist", c.GetId()))
+		return
+	}
 	manager.clients[c.GetId()] = c
 	log.Info(fmt.Sprintf("Client Register: %s，CurrClientNum: %d", c.GetId(), len(manager.clients)))
+	return
 }
 
 func (manager *clientManager) unregister(id string) {
 	manager.lock.Lock()
 	defer manager.lock.Unlock()
 	log.Info(fmt.Sprintf("Client Unregister: %s", id))
-	c, ok := manager.clients[id]
+	_, ok := manager.clients[id]
 	if ok {
-		c.Close()
-		delete(manager.clients, c.GetId())
+		delete(manager.clients, id)
 	}
 }
 
@@ -75,7 +89,7 @@ func (manager *clientManager) broad(msg *object.SocketMessage) {
 	go func() {
 		for _, c := range manager.clients {
 			log.Debug(fmt.Sprintf("Board msg: Type:%d,Msg:%s", msg.MessageType, msg.Data))
-			c.ChSend <- msg
+			c.GetChSend() <- msg
 		}
 	}()
 }

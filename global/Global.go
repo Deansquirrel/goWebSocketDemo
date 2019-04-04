@@ -15,6 +15,7 @@ const (
 
 const (
 	HttpConnectTimeout = 30
+	ReConnectDuration  = time.Minute * 5
 )
 
 var SysConfig *config.SysConfig
